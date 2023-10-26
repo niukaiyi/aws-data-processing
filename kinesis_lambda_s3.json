@@ -1,0 +1,280 @@
+{
+    "Parameters": {
+        "StreamName": {
+            "Default": "kinesis-example",
+            "Description": "kinesis stream name",
+            "Type": "String"
+        },
+        "FunctionName": {
+            "Default": "KinesisLambdaS3",
+            "Description": "Lambda Function Name",
+            "Type": "String"
+        },
+        "Account": {
+            "Default": "root",
+            "Description": "AWS Account",
+            "Type": "String"
+        },
+        "Region": {
+            "Default": "us-west-2",
+            "Description": "AWS Region",
+            "Type": "String"
+        },
+        "RawBucketName1": {
+            "Default": "kaiyi-us-east-2-bucket-training-day-2-01",
+            "Description": "raw bucket name",
+            "Type": "String"
+        },
+        "RawBucketName2": {
+            "Default": "kaiyi-us-east-2-bucket-training-day-2-02",
+            "Description": "raw bucket name",
+            "Type": "String"
+        },
+        "RoleName": {
+            "Default": "LambdaRole",
+            "Description": "Lambda Function Role Name",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "KinesisStream": {
+            "Type": "AWS::Kinesis::Stream",
+            "Properties": {
+                "Name": {
+                    "Ref": "StreamName"
+                },
+                "RetentionPeriodHours": 48,
+                "ShardCount": 1,
+                "StreamModeDetails": {
+                    "StreamMode": "PROVISIONED"
+                },
+                "Tags": [
+                    {
+                        "Key": "Developer",
+                        "Value": "Kaiyi"
+                    },
+                    {
+                        "Key": "Env",
+                        "Value": "PROD"
+                    }
+                ]
+            }
+        },
+        "KinesisEventSourceMapping": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "DependsOn": [
+                "KinesisLambda",
+                "KinesisStream"
+            ],
+            "Properties": {
+                "BatchSize": 150,
+                "Enabled": true,
+                "EventSourceArn": {
+                    "Fn::GetAtt": [
+                        "KinesisStream",
+                        "Arn"
+                    ]
+                },
+                "FunctionName": {
+                    "Fn::GetAtt": [
+                        "KinesisLambda",
+                        "Arn"
+                    ]
+                },
+                "MaximumBatchingWindowInSeconds": 5,
+                "ParallelizationFactor": 10,
+                "StartingPosition": "LATEST"
+            }
+        },
+        "KinesisLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Architectures": [
+                    "arm64"
+                ],
+                "Code": {
+                    "S3Bucket": "kaiyi-us-east-2-bucket-training-day-2-03",
+                    "S3Key": "Lambda/files/kinesis_lambda_s3.zip"
+                },
+                "Description": "This is a demo lambda template",
+                "EphemeralStorage": {
+                    "Size": 1024
+                },
+                "FunctionName": {
+                    "Ref": "FunctionName"
+                },
+                "Handler": "kinesis_lambda_s3.lambda_handler",
+                "MemorySize": 128,
+                "PackageType": "Zip",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "python3.11",
+                "Tags": [
+                    {
+                        "Key": "Developer",
+                        "Value": "Kaiyi"
+                    },
+                    {
+                        "Key": "SupportEmail",
+                        "Value": "xxxx@gamil.com"
+                    }
+                ],
+                "Timeout": 60
+            }
+        },
+        "LambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "LambdaS3Policy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Sid": "ReadAccess",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:GetObjectVersion"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "RawBucketName1"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "RawBucketName1"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    "Sid": "WriteAccess",
+                                    "Action": [
+                                        "s3:PutObject"
+                                    ],
+                                    "Effect": "Allow",
+                                    "Resource": [
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "RawBucketName2"
+                                                    }
+                                                ]
+                                            ]
+                                        },
+                                        {
+                                            "Fn::Join": [
+                                                "",
+                                                [
+                                                    "arn:aws:s3:::",
+                                                    {
+                                                        "Ref": "RawBucketName2"
+                                                    },
+                                                    "/*"
+                                                ]
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "KinesisPolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "kinesis:GetRecords",
+                                        "kinesis:GetShardIterator",
+                                        "kinesis:DescribeStream",
+                                        "kinesis:ListShards",
+                                        "kinesis:ListStreams"
+                                    ],
+                                    "Resource": [
+                                        "arn:aws:kinesis:*"
+                                    ]
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "PolicyName": "LambdaLogPolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Sid": "LogAccess",
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:*"
+                                    ],
+                                    "Resource": "arn:aws:logs:*:*:*"
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "Account"
+                            },
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            {
+                                "Ref": "RoleName"
+                            }
+                        ]
+                    ]
+                }
+            }
+        }
+    }
+}
