@@ -1,0 +1,245 @@
+{
+    "Parameters": {
+        "AccountID": {
+            "Default": "875366868971",
+            "Description": "AWS Account ID",
+            "Type": "String"
+        },
+        "FunctionName": {
+            "Default": "sqs_email_lambda",
+            "Description": "Lambda Function Name",
+            "Type": "String"
+        },
+        "Account": {
+            "Default": "root",
+            "Description": "AWS Account",
+            "Type": "String"
+        },
+        "Region": {
+            "Default": "us-west-2",
+            "Description": "AWS Region",
+            "Type": "String"
+        }
+    },
+    "Resources": {
+        "MySNSTopic": {
+            "Type": "AWS::SNS::Topic",
+            "Properties": {
+                "DisplayName": "sns-sqs-email",
+                "TopicName": "sns-sqs-email"
+            }
+        },
+        "MySQS": {
+            "Type": "AWS::SQS::Queue",
+            "Properties": {
+                "QueueName": "MySQS",
+                "VisibilityTimeout": 60
+            }
+        },
+        "MySQSPolicy": {
+            "Type": "AWS::SQS::QueuePolicy",
+            "Properties": {
+                "Queues": [
+                    {
+                        "Ref": "MySQS"
+                    }
+                ],
+                "PolicyDocument": {
+                    "Id": "AllowSendMessage",
+                    "Statement": [
+                        {
+                            "Sid": "AllowSendReceiveWithinAccount",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": [
+                                    {
+                                        "Ref": "AWS::AccountId"
+                                    }
+                                ]
+                            },
+                            "Action": [
+                                "sqs:SendMessage",
+                                "sqs:ReceiveMessage"
+                            ],
+                            "Resource": [
+                                {
+                                    "Fn::GetAtt": [
+                                        "MySQS",
+                                        "Arn"
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "Sid": "AllowSNSTopicToSendMessage",
+                            "Effect": "Allow",
+                            "Principal": "*",
+                            "Action": [
+                                "sqs:SendMessage"
+                            ],
+                            "Resource": [
+                                {
+                                    "Fn::GetAtt": [
+                                        "MySQS",
+                                        "Arn"
+                                    ]
+                                }
+                            ],
+                            "Condition": {
+                                "ArnEquals": {
+                                    "aws:SourceArn": {
+                                        "Ref": "MySNSTopic"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
+        },
+        "MySNSSubscription": {
+            "Type": "AWS::SNS::Subscription",
+            "Properties": {
+                "Protocol": "sqs",
+                "TopicArn": {
+                    "Ref": "MySNSTopic"
+                },
+                "Endpoint": {
+                    "Fn::GetAtt": [
+                        "MySQS",
+                        "Arn"
+                    ]
+                }
+            }
+        },
+        "SQSEventSourceMapping": {
+            "Type": "AWS::Lambda::EventSourceMapping",
+            "DependsOn": [
+                "MySQS",
+                "SQSLambda"
+            ],
+            "Properties": {
+                "BatchSize": 150,
+                "Enabled": true,
+                "EventSourceArn": {
+                    "Fn::GetAtt": [
+                        "MySQS",
+                        "Arn"
+                    ]
+                },
+                "FunctionName": {
+                    "Fn::GetAtt": [
+                        "SQSLambda",
+                        "Arn"
+                    ]
+                },
+                "MaximumBatchingWindowInSeconds": 5
+            }
+        },
+        "SQSLambda": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Architectures": [
+                    "x86_64"
+                ],
+                "Code": {
+                    "S3Bucket": "root-lambda-s3",
+                    "S3Key": "Lambda/files/dynamodb_lambda.zip"
+                },
+                "Description": "Dynamodb lambda using CFT",
+                "EphemeralStorage": {
+                    "Size": 1024
+                },
+                "FunctionName": {
+                    "Ref": "FunctionName"
+                },
+                "Handler": "dynamodb_lambda.lambda_handler",
+                "MemorySize": 128,
+                "PackageType": "Zip",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "LambdaRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "python3.10",
+                "Tags": [
+                    {
+                        "Key": "Developer",
+                        "Value": "Kaiyi"
+                    },
+                    {
+                        "Key": "SupportEmail",
+                        "Value": "xxxx@gamil.com"
+                    }
+                ],
+                "Timeout": 60
+            }
+        },
+        "LambdaRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "LambdaPolicy",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Resource": "*",
+                                    "Action": [
+                                        "ses:*"
+                                    ]
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Resource": "*",
+                                    "Action": [
+                                        "sqs:ReceiveMessage",
+                                        "sqs:DeleteMessage",
+                                        "sqs:GetQueueAttributes",
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ],
+                "RoleName": {
+                    "Fn::Join": [
+                        "-",
+                        [
+                            {
+                                "Ref": "Account"
+                            },
+                            {
+                                "Ref": "AWS::Region"
+                            },
+                            "SQS-EMAIL-Role"
+                        ]
+                    ]
+                }
+            }
+        }
+    }
+}
